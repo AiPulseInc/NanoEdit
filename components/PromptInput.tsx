@@ -27,16 +27,31 @@ export const PromptInput: React.FC<PromptInputProps> = ({ onSubmit, isLoading, o
     "Add flowers",
     "Make it brighter"
   ] : [
+    "Remove background",
     "Cyberpunk city style",
     "Pencil sketch",
     "Add a cute robot",
-    "Remove background",
     "Vintage polaroid"
   ];
 
   const handleSuggestionClick = (suggestion: string) => {
-    setPrompt(suggestion);
-    // Optional: auto-submit or just fill
+    if (suggestion === "Remove background") {
+      // Optimized prompt for background removal
+      setPrompt("Remove background, isolate subject, white background");
+    } else {
+      setPrompt(suggestion);
+    }
+  };
+
+  const handleMagicEnhance = () => {
+    const trimmedPrompt = prompt.trim();
+    if (!trimmedPrompt) {
+        // If empty, provide a general enhancement prompt based on improving quality
+        setPrompt("Enhance image quality, professional lighting, 4k resolution, highly detailed, sharp focus");
+    } else {
+        // If text exists, preserve intent and append quality modifiers
+        setPrompt(`${trimmedPrompt}, professional studio lighting, 8k resolution, highly detailed, cinematic composition, masterpiece`);
+    }
   };
 
   return (
@@ -44,7 +59,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({ onSubmit, isLoading, o
       <form onSubmit={handleSubmit} className="relative group flex gap-2">
         {/* Main Input Container */}
         <div className="relative flex-1 flex items-center bg-slate-900 rounded-lg border border-slate-700 shadow-xl overflow-hidden focus-within:border-banana-500/50 transition-colors">
-          <div className="pl-3 text-slate-500">
+          <div className="pl-3 text-slate-500 hover:text-banana-400 cursor-pointer transition-colors" title="Magic Enhance" onClick={handleMagicEnhance}>
             <Wand2 className="w-4 h-4" />
           </div>
           <input
@@ -120,7 +135,9 @@ export const PromptInput: React.FC<PromptInputProps> = ({ onSubmit, isLoading, o
               text-[10px] px-2.5 py-1 rounded-full border transition-all
               ${onMaskModeSuggestion 
                 ? 'bg-banana-500/10 border-banana-500/30 text-banana-200 hover:bg-banana-500/20' 
-                : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:border-banana-500/50 hover:text-banana-200 hover:bg-slate-800'}
+                : index === 0 && !onMaskModeSuggestion // Highlight the first item (Remove Background) specially
+                  ? 'bg-slate-800 text-banana-400 border-banana-500/30 hover:bg-banana-500/10 hover:border-banana-400'
+                  : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:border-banana-500/50 hover:text-banana-200 hover:bg-slate-800'}
             `}
           >
             {suggestion}

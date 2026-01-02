@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowRight, Download, Maximize2, X, Sparkles, RefreshCcw, Eraser, MousePointer2, GripHorizontal } from 'lucide-react';
+import { ArrowRight, Download, Maximize2, X, Sparkles, RefreshCcw, Eraser, MousePointer2, GripHorizontal, Undo2, Circle } from 'lucide-react';
 import { ProcessedImage } from '../types';
 
 interface ComparisonViewProps {
@@ -29,6 +29,9 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
   // Masking State
   const [isMaskingMode, setIsMaskingMode] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [brushSize, setBrushSize] = useState(30);
+  const [undoStack, setUndoStack] = useState<ImageData[]>([]);
+  
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -54,6 +57,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
          const ctx = canvas.getContext('2d');
          if (ctx) {
            ctx.clearRect(0, 0, canvas.width, canvas.height);
+           setUndoStack([]); // Reset undo stack on new session
          }
       }
     }
@@ -124,8 +128,40 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
     }
   };
 
+  const saveToUndoStack = () => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        setUndoStack(prev => [...prev.slice(-10), imageData]); // Keep last 10 steps
+      }
+    }
+  };
+
+  const handleUndo = () => {
+    const canvas = canvasRef.current;
+    if (canvas && undoStack.length > 0) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const previousState = undoStack[undoStack.length - 1];
+        ctx.putImageData(previousState, 0, 0);
+        setUndoStack(prev => prev.slice(0, -1));
+        
+        // If stack becomes empty after this pop, we are effectively clearing the mask interaction-wise
+        // But we still need to trigger the saveMask to update parent state
+        // We do this via setTimeout to ensure the paint operation finished
+        setTimeout(saveMask, 0);
+      }
+    } else if (canvas && undoStack.length === 0) {
+        // If stack is empty, just clear
+        clearMask();
+    }
+  };
+
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     if (!isMaskingMode) return;
+    saveToUndoStack(); // Save state before new stroke
     setIsDrawing(true);
     draw(e);
   };
@@ -161,7 +197,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
     const x = (clientX - rect.left) * scaleX;
     const y = (clientY - rect.top) * scaleY;
 
-    ctx.lineWidth = 20; // This could also be scaled if needed, but fixed px is usually fine for masks
+    ctx.lineWidth = brushSize;
     ctx.lineCap = 'round';
     ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)'; // Visual yellow for user
     ctx.globalCompositeOperation = 'source-over';
@@ -178,6 +214,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        setUndoStack([]);
         onMaskChange(null);
       }
     }
@@ -200,8 +237,13 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
         
         const imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
         const data = imgData.data;
+        
+        // Count non-black pixels to see if mask is empty
+        let hasMask = false;
+        
         for (let i = 0; i < data.length; i += 4) {
           if (data[i] > 100 || data[i+1] > 100) { 
+             hasMask = true;
              data[i] = 255;
              data[i+1] = 255;
              data[i+2] = 255;
@@ -213,6 +255,12 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
              data[i+3] = 255; // Ensure strictly opaque background
           }
         }
+        
+        if (!hasMask) {
+            onMaskChange(null);
+            return;
+        }
+
         tempCtx.putImageData(imgData, 0, 0);
         
         const base64 = tempCanvas.toDataURL('image/png').split(',')[1];
@@ -279,26 +327,63 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
             {isMaskingMode ? (
               <div 
                 ref={controlsRef}
-                className={`absolute z-30 flex items-center gap-2 bg-black/80 p-1.5 rounded-lg border border-white/10 backdrop-blur-md shadow-xl ${!controlPos ? 'bottom-3 left-1/2 -translate-x-1/2' : ''}`}
+                className={`absolute z-30 flex flex-col gap-2 bg-black/80 p-2 rounded-xl border border-white/10 backdrop-blur-md shadow-xl ${!controlPos ? 'bottom-3 left-1/2 -translate-x-1/2' : ''}`}
                 style={controlPos ? { left: controlPos.x, top: controlPos.y, touchAction: 'none' } : {}}
               >
-                 <div 
-                   className="p-1.5 text-slate-400 hover:text-white cursor-grab active:cursor-grabbing border-r border-white/10 mr-1"
-                   onPointerDown={handleDragStart}
-                   title="Drag to move"
-                 >
-                   <GripHorizontal className="w-4 h-4" />
+                 <div className="flex items-center gap-2 border-b border-white/10 pb-2 mb-1">
+                   <div 
+                     className="p-1.5 text-slate-400 hover:text-white cursor-grab active:cursor-grabbing border-r border-white/10 mr-1"
+                     onPointerDown={handleDragStart}
+                     title="Drag to move"
+                   >
+                     <GripHorizontal className="w-4 h-4" />
+                   </div>
+                   
+                   {/* Brush Size Slider */}
+                   <div className="flex items-center gap-2 px-1 group/slider">
+                      <Circle className="w-3 h-3 text-slate-400" />
+                      <input 
+                        type="range" 
+                        min="5" 
+                        max="100" 
+                        value={brushSize} 
+                        onChange={(e) => setBrushSize(Number(e.target.value))}
+                        className="w-24 h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-banana-500"
+                      />
+                      <Circle className="w-5 h-5 text-slate-400" />
+                      
+                      {/* Floating tooltip for exact size */}
+                      <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-0.5 rounded opacity-0 group-hover/slider:opacity-100 transition-opacity">
+                        {brushSize}px
+                      </div>
+                   </div>
                  </div>
 
-                 <button onClick={clearMask} className="p-1.5 hover:bg-white/10 rounded-md text-white" title="Clear Mask">
-                   <Eraser className="w-4 h-4" />
-                 </button>
-                 <button onClick={() => { setIsMaskingMode(false); clearMask(); }} className="px-2 py-1 bg-red-500/80 hover:bg-red-500 text-white text-xs rounded-md font-medium">
-                   Cancel
-                 </button>
-                 <button onClick={() => setIsMaskingMode(false)} className="px-2 py-1 bg-banana-500 hover:bg-banana-400 text-slate-900 text-xs rounded-md font-bold">
-                   Done
-                 </button>
+                 <div className="flex items-center gap-1 justify-between">
+                    <div className="flex items-center gap-1">
+                      <button 
+                        onClick={handleUndo} 
+                        disabled={undoStack.length === 0}
+                        className={`p-1.5 rounded-md transition-colors ${undoStack.length === 0 ? 'text-slate-600 cursor-not-allowed' : 'text-white hover:bg-white/10'}`}
+                        title="Undo"
+                      >
+                        <Undo2 className="w-4 h-4" />
+                      </button>
+
+                      <button onClick={clearMask} className="p-1.5 hover:bg-white/10 rounded-md text-white" title="Clear All">
+                        <Eraser className="w-4 h-4" />
+                      </button>
+                   </div>
+                   
+                   <div className="flex items-center gap-2 pl-2 border-l border-white/10">
+                     <button onClick={() => { setIsMaskingMode(false); clearMask(); }} className="px-2 py-1 bg-red-500/80 hover:bg-red-500 text-white text-xs rounded-md font-medium">
+                       Cancel
+                     </button>
+                     <button onClick={() => setIsMaskingMode(false)} className="px-2 py-1 bg-banana-500 hover:bg-banana-400 text-slate-900 text-xs rounded-md font-bold">
+                       Done
+                     </button>
+                   </div>
+                 </div>
               </div>
             ) : (
               /* Toggle Mask Mode Button */
@@ -326,7 +411,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
 
         {/* Result Image or Placeholder */}
         <div className="flex items-center justify-center h-full overflow-hidden">
-          {resultUrl ? (
+          {resultUrl && !isProcessing ? (
             <div className="relative inline-flex max-w-full max-h-full group">
               <div className="absolute top-3 left-3 z-10 px-2 py-0.5 bg-banana-500/90 backdrop-blur-md rounded-full text-[10px] font-bold text-slate-900 border border-banana-400/50 shadow-sm">
                 GENERATED
