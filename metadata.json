@@ -1,0 +1,5 @@
+{
+  "name": "NanoEdit - AI Photo Editor",
+  "description": "Powerful AI photo editing powered by Gemini Nano Banana. Add objects, remove backgrounds, and transform styles using natural language.",
+  "requestFramePermissions": []
+}
