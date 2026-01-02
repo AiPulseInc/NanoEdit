@@ -154,10 +154,14 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
       clientY = (e as React.MouseEvent).clientY;
     }
 
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
+    // Calculate scale factor in case the canvas is resized by CSS (e.g. window resize)
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
 
-    ctx.lineWidth = 20;
+    const x = (clientX - rect.left) * scaleX;
+    const y = (clientY - rect.top) * scaleY;
+
+    ctx.lineWidth = 20; // This could also be scaled if needed, but fixed px is usually fine for masks
     ctx.lineCap = 'round';
     ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)'; // Visual yellow for user
     ctx.globalCompositeOperation = 'source-over';
@@ -206,6 +210,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
              data[i] = 0;
              data[i+1] = 0;
              data[i+2] = 0;
+             data[i+3] = 255; // Ensure strictly opaque background
           }
         }
         tempCtx.putImageData(imgData, 0, 0);

@@ -45,6 +45,12 @@ export const editImageWithGemini = async (
       }
     }
 
+    // Enhance prompt when masking to ensure the model edits rather than generates new
+    // This helps prevent the model from ignoring the input image or hallucinating unrelated content
+    const effectivePrompt = maskBase64 
+      ? `Apply this change to the masked area: ${prompt}`
+      : prompt;
+
     const parts: any[] = [
       {
         inlineData: {
@@ -53,7 +59,7 @@ export const editImageWithGemini = async (
         },
       },
       {
-        text: prompt,
+        text: effectivePrompt,
       },
     ];
 
