@@ -1,7 +1,12 @@
 import React from 'react';
-import { Sparkles, Zap } from 'lucide-react';
+import { Sparkles, Zap, Download } from 'lucide-react';
 
-export const Header: React.FC = () => {
+interface HeaderProps {
+  onInstall?: () => void;
+  showInstall?: boolean;
+}
+
+export const Header: React.FC<HeaderProps> = ({ onInstall, showInstall }) => {
   return (
     <header className="w-full py-3 px-4 md:px-6 border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm sticky top-0 z-50">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -19,9 +24,21 @@ export const Header: React.FC = () => {
           </div>
         </div>
         
-        <div className="hidden md:flex items-center gap-2 text-xs text-slate-400 bg-slate-800/50 px-3 py-1 rounded-full border border-slate-700">
-          <Sparkles className="w-3 h-3 text-banana-400" />
-          <span>Multimodal Editing</span>
+        <div className="flex items-center gap-3">
+          {showInstall && (
+            <button 
+              onClick={onInstall}
+              className="hidden md:flex items-center gap-2 text-xs font-bold text-slate-900 bg-banana-500 hover:bg-banana-400 px-3 py-1.5 rounded-lg transition-colors shadow-lg shadow-banana-500/20"
+            >
+              <Download className="w-3 h-3" />
+              <span>Install App</span>
+            </button>
+          )}
+          
+          <div className="hidden md:flex items-center gap-2 text-xs text-slate-400 bg-slate-800/50 px-3 py-1 rounded-full border border-slate-700">
+            <Sparkles className="w-3 h-3 text-banana-400" />
+            <span>Multimodal Editing</span>
+          </div>
         </div>
       </div>
     </header>

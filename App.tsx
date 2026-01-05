@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Header } from './components/Header';
 import { ImageUpload } from './components/ImageUpload';
 import { ComparisonView } from './components/ComparisonView';
@@ -6,11 +6,46 @@ import { PromptInput } from './components/PromptInput';
 import { HistoryStrip } from './components/HistoryStrip';
 import { editImageWithGemini } from './services/geminiService';
 import { ProcessedImage, AppStatus, EditHistoryItem, Resolution } from './types';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, WifiOff } from 'lucide-react';
 
 const App: React.FC = () => {
   const [sourceImage, setSourceImage] = useState<ProcessedImage | null>(null);
   const [status, setStatus] = useState<AppStatus>(AppStatus.IDLE);
+  
+  // Online/Offline Detection
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // PWA Install Prompt Handling
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallClick = useCallback(async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  }, [deferredPrompt]);
   
   // History Management
   const [history, setHistory] = useState<EditHistoryItem[]>([]);
@@ -73,6 +108,10 @@ const App: React.FC = () => {
 
   const handlePromptSubmit = async (prompt: string, resolution: Resolution) => {
     if (!sourceImage) return;
+    if (!isOnline) {
+      setErrorMessage("You are currently offline. Please reconnect to edit.");
+      return;
+    }
 
     setStatus(AppStatus.PROCESSING);
     setErrorMessage(null);
@@ -116,7 +155,18 @@ const App: React.FC = () => {
 
   return (
     <div className="h-[100dvh] bg-slate-950 flex flex-col font-sans overflow-hidden">
-      <Header />
+      <Header 
+        onInstall={handleInstallClick} 
+        showInstall={!!deferredPrompt} 
+      />
+
+      {/* Offline Banner */}
+      {!isOnline && (
+        <div className="bg-slate-800 text-slate-300 text-xs py-1 px-4 text-center border-b border-slate-700 flex items-center justify-center gap-2">
+          <WifiOff className="w-3 h-3" />
+          <span>You are offline. Editing is unavailable.</span>
+        </div>
+      )}
 
       <main className="flex-1 flex flex-col p-4 max-w-7xl mx-auto w-full overflow-y-auto">
         {!sourceImage ? (
@@ -158,11 +208,13 @@ const App: React.FC = () => {
               onSelect={handleHistorySelect} 
             />
 
-            <PromptInput 
-              onSubmit={handlePromptSubmit} 
-              isLoading={status === AppStatus.PROCESSING}
-              onMaskModeSuggestion={!!activeMaskBase64}
-            />
+            <div className={`${!isOnline ? 'opacity-50 pointer-events-none filter grayscale' : ''}`}>
+              <PromptInput 
+                onSubmit={handlePromptSubmit} 
+                isLoading={status === AppStatus.PROCESSING}
+                onMaskModeSuggestion={!!activeMaskBase64}
+              />
+            </div>
           </div>
         )}
       </main>

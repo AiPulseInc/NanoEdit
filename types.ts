@@ -21,7 +21,8 @@ export enum AppStatus {
   IDLE = 'IDLE',
   PROCESSING = 'PROCESSING',
   SUCCESS = 'SUCCESS',
-  ERROR = 'ERROR'
+  ERROR = 'ERROR',
+  OFFLINE = 'OFFLINE'
 }
 
 export type Resolution = '1K' | '2K' | '4K';
