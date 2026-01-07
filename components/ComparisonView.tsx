@@ -1,5 +1,6 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowRight, Download, Maximize2, X, Sparkles, RefreshCcw, Eraser, MousePointer2, GripHorizontal, Undo2, Circle } from 'lucide-react';
+import { ArrowRight, Download, Maximize2, X, Sparkles, RefreshCcw, Eraser, MousePointer2, GripHorizontal, Undo2, Circle, Atom } from 'lucide-react';
 import { ProcessedImage } from '../types';
 
 interface ComparisonViewProps {
@@ -26,7 +27,6 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
   const [showFullOriginal, setShowFullOriginal] = useState(false);
   const [showFullGenerated, setShowFullGenerated] = useState(false);
   
-  // Masking State
   const [isMaskingMode, setIsMaskingMode] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
   const [brushSize, setBrushSize] = useState(30);
@@ -35,13 +35,13 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
-  // Draggable Control State
   const [controlPos, setControlPos] = useState<{x: number, y: number} | null>(null);
   const [isDraggingControl, setIsDraggingControl] = useState(false);
   const controlsRef = useRef<HTMLDivElement>(null);
   const dragStartOffset = useRef<{x: number, y: number}>({ x: 0, y: 0 });
 
-  // Initialize/Resize Canvas
+  const isGenesis = original.previewUrl === 'GENESIS';
+
   useEffect(() => {
     if (isMaskingMode && canvasRef.current && containerRef.current) {
       const canvas = canvasRef.current;
@@ -49,55 +49,40 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
       const img = container.querySelector('img');
       
       if (img) {
-         // Match canvas size to the displayed image size
          canvas.width = img.clientWidth;
          canvas.height = img.clientHeight;
-         
-         // Clear on init
          const ctx = canvas.getContext('2d');
          if (ctx) {
            ctx.clearRect(0, 0, canvas.width, canvas.height);
-           setUndoStack([]); // Reset undo stack on new session
+           setUndoStack([]);
          }
       }
     }
-    // Reset control position when entering/exiting mask mode
     if (!isMaskingMode) {
       setControlPos(null);
     }
   }, [isMaskingMode, original.previewUrl]);
 
-  // Handle Control Dragging
   useEffect(() => {
     const handlePointerMove = (e: PointerEvent) => {
         if (!isDraggingControl || !containerRef.current) return;
-        
         e.preventDefault();
         const containerRect = containerRef.current.getBoundingClientRect();
-        
-        // Calculate new position relative to container
         let newX = e.clientX - containerRect.left - dragStartOffset.current.x;
         let newY = e.clientY - containerRect.top - dragStartOffset.current.y;
-        
-        // Simple bounds clamping
         const maxX = containerRect.width - 40; 
         const maxY = containerRect.height - 20;
-        
         newX = Math.max(0, Math.min(newX, maxX));
         newY = Math.max(0, Math.min(newY, maxY));
-        
         setControlPos({ x: newX, y: newY });
     };
 
-    const handlePointerUp = () => {
-        setIsDraggingControl(false);
-    };
+    const handlePointerUp = () => setIsDraggingControl(false);
 
     if (isDraggingControl) {
         window.addEventListener('pointermove', handlePointerMove);
         window.addEventListener('pointerup', handlePointerUp);
     }
-    
     return () => {
         window.removeEventListener('pointermove', handlePointerMove);
         window.removeEventListener('pointerup', handlePointerUp);
@@ -107,23 +92,13 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
   const handleDragStart = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
     if (controlsRef.current && containerRef.current) {
         const controlsRect = controlsRef.current.getBoundingClientRect();
         const containerRect = containerRef.current.getBoundingClientRect();
-        
-        const offsetX = e.clientX - controlsRect.left;
-        const offsetY = e.clientY - controlsRect.top;
-        
-        dragStartOffset.current = { x: offsetX, y: offsetY };
-        
+        dragStartOffset.current = { x: e.clientX - controlsRect.left, y: e.clientY - controlsRect.top };
         if (!controlPos) {
-             setControlPos({
-                 x: controlsRect.left - containerRect.left,
-                 y: controlsRect.top - containerRect.top
-             });
+             setControlPos({ x: controlsRect.left - containerRect.left, y: controlsRect.top - containerRect.top });
         }
-        
         setIsDraggingControl(true);
     }
   };
@@ -132,10 +107,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
     const canvas = canvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext('2d');
-      if (ctx) {
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        setUndoStack(prev => [...prev.slice(-10), imageData]); // Keep last 10 steps
-      }
+      if (ctx) setUndoStack(prev => [...prev.slice(-10), ctx.getImageData(0, 0, canvas.width, canvas.height)]);
     }
   };
 
@@ -144,24 +116,16 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
     if (canvas && undoStack.length > 0) {
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        const previousState = undoStack[undoStack.length - 1];
-        ctx.putImageData(previousState, 0, 0);
+        ctx.putImageData(undoStack[undoStack.length - 1], 0, 0);
         setUndoStack(prev => prev.slice(0, -1));
-        
-        // If stack becomes empty after this pop, we are effectively clearing the mask interaction-wise
-        // But we still need to trigger the saveMask to update parent state
-        // We do this via setTimeout to ensure the paint operation finished
         setTimeout(saveMask, 0);
       }
-    } else if (canvas && undoStack.length === 0) {
-        // If stack is empty, just clear
-        clearMask();
-    }
+    } else if (canvas) clearMask();
   };
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     if (!isMaskingMode) return;
-    saveToUndoStack(); // Save state before new stroke
+    saveToUndoStack();
     setIsDrawing(true);
     draw(e);
   };
@@ -178,30 +142,16 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
     const rect = canvas.getBoundingClientRect();
     let clientX, clientY;
-
-    if ('touches' in e) {
-      clientX = e.touches[0].clientX;
-      clientY = e.touches[0].clientY;
-    } else {
-      clientX = (e as React.MouseEvent).clientX;
-      clientY = (e as React.MouseEvent).clientY;
-    }
-
-    // Calculate scale factor in case the canvas is resized by CSS (e.g. window resize)
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-
-    const x = (clientX - rect.left) * scaleX;
-    const y = (clientY - rect.top) * scaleY;
-
+    if ('touches' in e) { clientX = e.touches[0].clientX; clientY = e.touches[0].clientY; }
+    else { clientX = (e as React.MouseEvent).clientX; clientY = (e as React.MouseEvent).clientY; }
+    const x = (clientX - rect.left) * (canvas.width / rect.width);
+    const y = (clientY - rect.top) * (canvas.height / rect.height);
     ctx.lineWidth = brushSize;
     ctx.lineCap = 'round';
-    ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)'; // Visual yellow for user
+    ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
     ctx.globalCompositeOperation = 'source-over';
-    
     ctx.lineTo(x, y);
     ctx.stroke();
     ctx.beginPath();
@@ -227,44 +177,21 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
       tempCanvas.width = canvas.width;
       tempCanvas.height = canvas.height;
       const tempCtx = tempCanvas.getContext('2d');
-      
       if (tempCtx) {
         tempCtx.fillStyle = 'black';
         tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-        
-        tempCtx.globalCompositeOperation = 'source-over';
         tempCtx.drawImage(canvas, 0, 0);
-        
         const imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
         const data = imgData.data;
-        
-        // Count non-black pixels to see if mask is empty
         let hasMask = false;
-        
         for (let i = 0; i < data.length; i += 4) {
           if (data[i] > 100 || data[i+1] > 100) { 
-             hasMask = true;
-             data[i] = 255;
-             data[i+1] = 255;
-             data[i+2] = 255;
-             data[i+3] = 255;
-          } else {
-             data[i] = 0;
-             data[i+1] = 0;
-             data[i+2] = 0;
-             data[i+3] = 255; // Ensure strictly opaque background
-          }
+             hasMask = true; data[i] = 255; data[i+1] = 255; data[i+2] = 255; data[i+3] = 255;
+          } else { data[i] = 0; data[i+1] = 0; data[i+2] = 0; data[i+3] = 255; }
         }
-        
-        if (!hasMask) {
-            onMaskChange(null);
-            return;
-        }
-
+        if (!hasMask) { onMaskChange(null); return; }
         tempCtx.putImageData(imgData, 0, 0);
-        
-        const base64 = tempCanvas.toDataURL('image/png').split(',')[1];
-        onMaskChange(base64);
+        onMaskChange(tempCanvas.toDataURL('image/png').split(',')[1]);
       }
     }
   };
@@ -284,132 +211,87 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
     <div className="w-full flex flex-col">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative h-[360px]">
         
-        {/* Original Image Container */}
+        {/* Left Side: Original or Genesis Info */}
         <div className="flex items-center justify-center h-full overflow-hidden relative">
-          <div ref={containerRef} className="relative inline-flex max-w-full max-h-full group">
-            <div className="absolute top-3 left-3 z-10 px-2 py-0.5 bg-black/60 backdrop-blur-md rounded-full text-[10px] font-semibold text-white border border-white/10 shadow-sm flex items-center gap-2">
-              <span>ORIGINAL</span>
-              {isMaskingMode && <span className="text-banana-400 animate-pulse">● DRAW MASK</span>}
-            </div>
-            
-            {!isMaskingMode && (
-              <button 
-                onClick={onReset}
-                className="absolute top-3 right-3 z-10 p-1.5 bg-black/60 hover:bg-red-500/80 backdrop-blur-md rounded-full text-white border border-white/10 transition-colors shadow-sm"
-                title="Remove image"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            )}
-
-            <img 
-              src={original.previewUrl} 
-              alt="Original" 
-              className="max-w-full max-h-full w-auto h-auto object-contain rounded-xl border border-slate-700 shadow-xl select-none"
-            />
-            
-            {/* Masking Canvas Overlay */}
-            {isMaskingMode && (
-              <canvas
-                ref={canvasRef}
-                className="absolute inset-0 touch-none cursor-crosshair rounded-xl z-20"
-                onMouseDown={startDrawing}
-                onMouseMove={draw}
-                onMouseUp={stopDrawing}
-                onMouseLeave={stopDrawing}
-                onTouchStart={startDrawing}
-                onTouchMove={draw}
-                onTouchEnd={stopDrawing}
-              />
-            )}
-
-            {/* Masking Controls Overlay */}
-            {isMaskingMode ? (
-              <div 
-                ref={controlsRef}
-                className={`absolute z-30 flex flex-col gap-2 bg-black/80 p-2 rounded-xl border border-white/10 backdrop-blur-md shadow-xl ${!controlPos ? 'bottom-3 left-1/2 -translate-x-1/2' : ''}`}
-                style={controlPos ? { left: controlPos.x, top: controlPos.y, touchAction: 'none' } : {}}
-              >
-                 <div className="flex items-center gap-2 border-b border-white/10 pb-2 mb-1">
-                   <div 
-                     className="p-1.5 text-slate-400 hover:text-white cursor-grab active:cursor-grabbing border-r border-white/10 mr-1"
-                     onPointerDown={handleDragStart}
-                     title="Drag to move"
-                   >
-                     <GripHorizontal className="w-4 h-4" />
-                   </div>
-                   
-                   {/* Brush Size Slider */}
-                   <div className="flex items-center gap-2 px-1 group/slider">
-                      <Circle className="w-3 h-3 text-slate-400" />
-                      <input 
-                        type="range" 
-                        min="5" 
-                        max="100" 
-                        value={brushSize} 
-                        onChange={(e) => setBrushSize(Number(e.target.value))}
-                        className="w-24 h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-banana-500"
-                      />
-                      <Circle className="w-5 h-5 text-slate-400" />
-                      
-                      {/* Floating tooltip for exact size */}
-                      <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-0.5 rounded opacity-0 group-hover/slider:opacity-100 transition-opacity">
-                        {brushSize}px
-                      </div>
-                   </div>
-                 </div>
-
-                 <div className="flex items-center gap-1 justify-between">
-                    <div className="flex items-center gap-1">
-                      <button 
-                        onClick={handleUndo} 
-                        disabled={undoStack.length === 0}
-                        className={`p-1.5 rounded-md transition-colors ${undoStack.length === 0 ? 'text-slate-600 cursor-not-allowed' : 'text-white hover:bg-white/10'}`}
-                        title="Undo"
-                      >
-                        <Undo2 className="w-4 h-4" />
-                      </button>
-
-                      <button onClick={clearMask} className="p-1.5 hover:bg-white/10 rounded-md text-white" title="Clear All">
-                        <Eraser className="w-4 h-4" />
-                      </button>
-                   </div>
-                   
-                   <div className="flex items-center gap-2 pl-2 border-l border-white/10">
-                     <button onClick={() => { setIsMaskingMode(false); clearMask(); }} className="px-2 py-1 bg-red-500/80 hover:bg-red-500 text-white text-xs rounded-md font-medium">
-                       Cancel
-                     </button>
-                     <button onClick={() => setIsMaskingMode(false)} className="px-2 py-1 bg-banana-500 hover:bg-banana-400 text-slate-900 text-xs rounded-md font-bold">
-                       Done
-                     </button>
-                   </div>
-                 </div>
+          {isGenesis ? (
+            <div className="w-full h-full bg-slate-900/50 rounded-xl border border-dashed border-slate-700 flex flex-col items-center justify-center text-center p-6 gap-3">
+              <div className="p-3 bg-banana-500/10 rounded-full">
+                <Atom className="w-8 h-8 text-banana-400 animate-spin-slow" />
               </div>
-            ) : (
-              /* Toggle Mask Mode Button */
-              <button 
-                onClick={() => setIsMaskingMode(true)}
-                className="absolute bottom-3 left-3 p-1.5 bg-black/50 hover:bg-black/70 rounded-lg text-white group-hover:opacity-100 transition-opacity flex items-center gap-2 border border-white/10"
-                title="Select Area to Edit"
-              >
-                <MousePointer2 className="w-4 h-4 text-banana-400" />
-                <span className="text-xs font-medium">Select Area</span>
-              </button>
-            )}
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Genesis Creation</h3>
+                <p className="text-[10px] text-slate-500 max-w-[180px] mt-1">This image was generated from scratch. Promoting it to "Source" will unlock editing tools.</p>
+              </div>
+            </div>
+          ) : (
+            <div ref={containerRef} className="relative inline-flex max-w-full max-h-full group">
+              <div className="absolute top-3 left-3 z-10 px-2 py-0.5 bg-black/60 backdrop-blur-md rounded-full text-[10px] font-semibold text-white border border-white/10 shadow-sm flex items-center gap-2">
+                <span>ORIGINAL</span>
+                {isMaskingMode && <span className="text-banana-400 animate-pulse">● DRAW MASK</span>}
+              </div>
+              
+              {!isMaskingMode && (
+                <button 
+                  onClick={onReset}
+                  className="absolute top-3 right-3 z-10 p-1.5 bg-black/60 hover:bg-red-500/80 backdrop-blur-md rounded-full text-white border border-white/10 transition-colors shadow-sm"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
 
-            {/* Zoom button */}
-            {!isMaskingMode && (
-              <button 
-                onClick={() => setShowFullOriginal(true)}
-                className="absolute bottom-3 right-3 p-1.5 bg-black/50 hover:bg-black/70 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <Maximize2 className="w-4 h-4" />
-              </button>
-            )}
-          </div>
+              <img src={original.previewUrl} alt="Original" className="max-w-full max-h-full w-auto h-auto object-contain rounded-xl border border-slate-700 shadow-xl select-none" />
+              
+              {isMaskingMode && (
+                <canvas
+                  ref={canvasRef}
+                  className="absolute inset-0 touch-none cursor-crosshair rounded-xl z-20"
+                  onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing}
+                />
+              )}
+
+              {isMaskingMode ? (
+                <div 
+                  ref={controlsRef}
+                  className={`absolute z-30 flex flex-col gap-2 bg-black/80 p-2 rounded-xl border border-white/10 backdrop-blur-md shadow-xl ${!controlPos ? 'bottom-3 left-1/2 -translate-x-1/2' : ''}`}
+                  style={controlPos ? { left: controlPos.x, top: controlPos.y, touchAction: 'none' } : {}}
+                >
+                   <div className="flex items-center gap-2 border-b border-white/10 pb-2 mb-1">
+                     <div className="p-1.5 text-slate-400 hover:text-white cursor-grab active:cursor-grabbing border-r border-white/10 mr-1" onPointerDown={handleDragStart}>
+                       <GripHorizontal className="w-4 h-4" />
+                     </div>
+                     <div className="flex items-center gap-2 px-1 group/slider">
+                        <Circle className="w-3 h-3 text-slate-400" />
+                        <input type="range" min="5" max="100" value={brushSize} onChange={(e) => setBrushSize(Number(e.target.value))} className="w-24 h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-banana-500" />
+                        <Circle className="w-5 h-5 text-slate-400" />
+                     </div>
+                   </div>
+
+                   <div className="flex items-center gap-1 justify-between">
+                      <div className="flex items-center gap-1">
+                        <button onClick={handleUndo} disabled={undoStack.length === 0} className={`p-1.5 rounded-md ${undoStack.length === 0 ? 'text-slate-600' : 'text-white hover:bg-white/10'}`}><Undo2 className="w-4 h-4" /></button>
+                        <button onClick={clearMask} className="p-1.5 hover:bg-white/10 rounded-md text-white"><Eraser className="w-4 h-4" /></button>
+                     </div>
+                     <div className="flex items-center gap-2 pl-2 border-l border-white/10">
+                       <button onClick={() => { setIsMaskingMode(false); clearMask(); }} className="px-2 py-1 bg-red-500/80 hover:bg-red-500 text-white text-xs rounded-md">Cancel</button>
+                       <button onClick={() => setIsMaskingMode(false)} className="px-2 py-1 bg-banana-500 hover:bg-banana-400 text-slate-900 text-xs rounded-md font-bold">Done</button>
+                     </div>
+                   </div>
+                </div>
+              ) : (
+                <button onClick={() => setIsMaskingMode(true)} className="absolute bottom-3 left-3 p-1.5 bg-black/50 hover:bg-black/70 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 border border-white/10">
+                  <MousePointer2 className="w-4 h-4 text-banana-400" />
+                  <span className="text-xs font-medium">Select Area</span>
+                </button>
+              )}
+
+              {!isMaskingMode && (
+                <button onClick={() => setShowFullOriginal(true)} className="absolute bottom-3 right-3 p-1.5 bg-black/50 hover:bg-black/70 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity"><Maximize2 className="w-4 h-4" /></button>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Result Image or Placeholder */}
+        {/* Right Side: Result */}
         <div className="flex items-center justify-center h-full overflow-hidden">
           {resultUrl && !isProcessing ? (
             <div className="relative inline-flex max-w-full max-h-full group">
@@ -417,17 +299,13 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
                 GENERATED
               </div>
               
-              {/* Use as Input Button */}
-              <button 
-                onClick={() => onUseAsInput(resultUrl)}
-                className="absolute top-3 right-3 z-20 px-2 py-1 bg-black/60 hover:bg-banana-500/90 hover:text-slate-900 backdrop-blur-md rounded-lg text-[10px] font-semibold text-white border border-white/10 transition-colors shadow-sm flex items-center gap-1.5"
-                title="Use this image as the new input"
-              >
-                <RefreshCcw className="w-3 h-3" />
-                Edit This
-              </button>
+              {!isGenesis && (
+                <button onClick={() => onUseAsInput(resultUrl)} className="absolute top-3 right-3 z-20 px-2 py-1 bg-black/60 hover:bg-banana-500/90 hover:text-slate-900 backdrop-blur-md rounded-lg text-[10px] font-semibold text-white border border-white/10 transition-colors shadow-sm flex items-center gap-1.5">
+                  <RefreshCcw className="w-3 h-3" />
+                  Edit This
+                </button>
+              )}
 
-              {/* Prompt Overlay */}
               {currentPrompt && (
                 <div className="absolute bottom-12 right-3 z-10 max-w-[150px] md:max-w-[200px] px-2 py-1 bg-black/50 backdrop-blur-sm rounded-lg text-[10px] text-white/90 border border-white/10 shadow-sm truncate">
                   <span className="flex items-center gap-1">
@@ -437,27 +315,15 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
                 </div>
               )}
 
-              <img 
-                src={resultUrl} 
-                alt="Edited" 
-                className="max-w-full max-h-full w-auto h-auto object-contain rounded-xl border border-slate-700 shadow-xl cursor-zoom-in hover:opacity-95 transition-opacity"
-                onClick={() => setShowFullGenerated(true)}
-              />
-              <button 
-                onClick={handleDownload}
-                className="absolute bottom-4 right-4 flex items-center gap-2 px-3 py-1.5 bg-banana-500 hover:bg-banana-400 text-slate-900 font-bold text-xs rounded-lg shadow-lg shadow-banana-500/20 transform hover:-translate-y-1 transition-all z-20"
-              >
+              <img src={resultUrl} alt="Edited" className="max-w-full max-h-full w-auto h-auto object-contain rounded-xl border border-slate-700 shadow-xl cursor-zoom-in hover:opacity-95 transition-opacity" onClick={() => setShowFullGenerated(true)} />
+              <button onClick={handleDownload} className="absolute bottom-4 right-4 flex items-center gap-2 px-3 py-1.5 bg-banana-500 hover:bg-banana-400 text-slate-900 font-bold text-xs rounded-lg shadow-lg shadow-banana-500/20 transform hover:-translate-y-1 transition-all z-20">
                 <Download className="w-3 h-3" />
                 Download
               </button>
             </div>
           ) : (
-            // Placeholder / Loading State
             <div className="relative w-full h-full rounded-xl overflow-hidden bg-slate-800 border border-slate-700 shadow-xl flex items-center justify-center">
-              <div className="absolute top-3 left-3 z-10 px-2 py-0.5 bg-slate-700/50 backdrop-blur-md rounded-full text-[10px] font-bold text-slate-400 border border-slate-600/50">
-                OUTPUT
-              </div>
-
+              <div className="absolute top-3 left-3 z-10 px-2 py-0.5 bg-slate-700/50 backdrop-blur-md rounded-full text-[10px] font-bold text-slate-400 border border-slate-600/50">OUTPUT</div>
               {isProcessing ? (
                  <div className="flex flex-col items-center p-4 text-center space-y-3 animate-pulse">
                     <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-banana-400 to-banana-600 animate-spin blur-xl opacity-50 absolute"></div>
@@ -467,49 +333,45 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
                     </div>
-                    <div className="relative z-10">
-                      <p className="text-sm font-medium text-white">Thinking...</p>
-                      <p className="text-[10px] text-banana-300/70 mt-0.5">Peeling the pixels</p>
-                    </div>
+                    <div className="relative z-10"><p className="text-sm font-medium text-white">Synthesizing...</p><p className="text-[10px] text-banana-300/70 mt-0.5">Creating digital matter</p></div>
                  </div>
               ) : resultText ? (
                 <div className="p-4 max-w-sm text-center">
-                  <div className="w-10 h-10 mx-auto mb-2 bg-slate-700 rounded-lg flex items-center justify-center">
-                    <span className="text-lg">💬</span>
-                  </div>
-                  <h3 className="text-sm font-semibold text-white mb-1">Message</h3>
+                  <div className="w-10 h-10 mx-auto mb-2 bg-slate-700 rounded-lg flex items-center justify-center">💬</div>
+                  <h3 className="text-sm font-semibold text-white mb-1">Model Response</h3>
                   <p className="text-slate-300 text-xs leading-relaxed">{resultText}</p>
                 </div>
               ) : (
-                <div className="p-6 text-center text-slate-500">
-                   <ArrowRight className="w-6 h-6 mx-auto mb-2 opacity-20" />
-                   <p className="text-xs">Your creation will appear here</p>
-                </div>
+                <div className="p-6 text-center text-slate-500"><ArrowRight className="w-6 h-6 mx-auto mb-2 opacity-20" /><p className="text-xs">Your creation will appear here</p></div>
               )}
             </div>
           )}
         </div>
       </div>
 
-      {/* Modal for full original view */}
       {showFullOriginal && (
-        <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4 cursor-zoom-out" onClick={() => setShowFullOriginal(false)}>
+        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 cursor-zoom-out" onClick={() => setShowFullOriginal(false)}>
            <img src={original.previewUrl} className="max-w-full max-h-full object-contain" alt="Full original" />
-           <button className="absolute top-4 right-4 text-white p-2">
-             <X className="w-8 h-8" />
-           </button>
+           <button className="absolute top-4 right-4 text-white p-2"><X className="w-8 h-8" /></button>
         </div>
       )}
 
-      {/* Modal for full generated view */}
       {showFullGenerated && resultUrl && (
-        <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4 cursor-zoom-out" onClick={() => setShowFullGenerated(false)}>
+        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 cursor-zoom-out" onClick={() => setShowFullGenerated(false)}>
            <img src={resultUrl} className="max-w-full max-h-full object-contain" alt="Full generated" />
-           <button className="absolute top-4 right-4 text-white p-2">
-             <X className="w-8 h-8" />
-           </button>
+           <button className="absolute top-4 right-4 text-white p-2"><X className="w-8 h-8" /></button>
         </div>
       )}
+      
+      <style>{`
+        @keyframes spin-slow {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .animate-spin-slow {
+          animation: spin-slow 8s linear infinite;
+        }
+      `}</style>
     </div>
   );
 };

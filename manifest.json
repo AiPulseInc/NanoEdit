@@ -4,13 +4,13 @@
   "description": "Powerful AI photo editing powered by Gemini Nano Banana.",
   "icons": [
     {
-      "src": "icon.svg",
+      "src": "./icon.svg",
       "type": "image/svg+xml",
       "sizes": "any"
     }
   ],
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "./",
+  "scope": "./",
   "background_color": "#020617",
   "display": "standalone",
   "theme_color": "#020617",

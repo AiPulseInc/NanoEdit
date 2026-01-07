@@ -67,7 +67,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({ onSubmit, isLoading, o
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder={onMaskModeSuggestion ? "Describe how to change the selected area..." : "Describe your edit (e.g., 'Add fireworks')"}
-            className="w-full bg-transparent border-none outline-none text-white px-3 py-3 focus:ring-0 placeholder:text-slate-600 text-base"
+            className="w-full bg-transparent border-none outline-none text-white px-3 py-3 focus:ring-0 placeholder:text-slate-600 text-[16px]"
             disabled={isLoading}
           />
         </div>

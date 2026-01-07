@@ -26,3 +26,4 @@ export enum AppStatus {
 }
 
 export type Resolution = '1K' | '2K' | '4K';
+export type AspectRatio = '1:1' | '16:9' | '9:16';

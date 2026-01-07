@@ -15,8 +15,11 @@ export const Header: React.FC<HeaderProps> = ({ onInstall, showInstall }) => {
             <Zap className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
-              NanoEdit
+            <h1 className="text-lg font-bold flex items-baseline gap-2">
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
+                NanoEdit
+              </span>
+              <span className="text-xs font-normal text-slate-500">v0.91</span>
             </h1>
             <p className="text-[10px] text-banana-400 font-medium tracking-wide leading-none">
               POWERED BY GEMINI NANO BANANA

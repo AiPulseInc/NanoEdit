@@ -1,28 +1,26 @@
-const CACHE_NAME = 'nanoedit-v2';
-const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/icon.svg',
+const CACHE_NAME = 'nanoedit-v6-stable';
+// Only cache purely static assets that rarely change
+const STATIC_ASSETS = [
+  './icon.svg',
+  './manifest.json'
 ];
 
-// Install Event: Cache critical assets
 self.addEventListener('install', (event) => {
+  self.skipWaiting(); // Force activate immediately
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
+      return cache.addAll(STATIC_ASSETS);
     })
   );
-  self.skipWaiting();
 });
 
-// Activate Event: Clean up old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheName !== CACHE_NAME) {
+            console.log('Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
@@ -32,37 +30,38 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch Event: Stale-While-Revalidate for most resources
 self.addEventListener('fetch', (event) => {
-  // Only handle GET requests
-  if (event.request.method !== 'GET') return;
-
   const url = new URL(event.request.url);
 
-  // Strategy: Network First for API calls (Gemini)
-  if (url.hostname.includes('googleapis.com') || url.hostname.includes('generativelanguage')) {
-    return;
+  // NETWORK ONLY for:
+  // 1. .tsx/.ts files (Source code changing often)
+  // 2. index.html (App shell entry point)
+  // 3. APIs and CDNs
+  if (
+    url.pathname.endsWith('.tsx') ||
+    url.pathname.endsWith('.ts') ||
+    url.pathname.endsWith('index.html') ||
+    url.href.endsWith('/') || // Root
+    url.hostname.includes('googleapis.com') || 
+    url.hostname.includes('esm.sh') ||
+    url.hostname.includes('cdn.tailwindcss.com')
+  ) {
+    // Return result from network, fallback to offline page if needed (not implemented here for simplicity)
+    return; 
   }
 
+  // STALE-WHILE-REVALIDATE for cached assets (icon, manifest)
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
-      // If we have a cached response, return it, but also update the cache in the background
       const fetchPromise = fetch(event.request).then((networkResponse) => {
-        // Check if valid
-        if (!networkResponse || (networkResponse.status !== 200 && networkResponse.type !== 'opaque')) {
-          return networkResponse;
+        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
         }
-
-        // Clone and cache
-        const responseToCache = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseToCache);
-        });
-
         return networkResponse;
       });
-
-      // Return cached response immediately if available, otherwise wait for network
       return cachedResponse || fetchPromise;
     })
   );

@@ -1,86 +1,78 @@
+
 import { GoogleGenAI } from "@google/genai";
-import { EditResult, Resolution } from "../types";
+import { EditResult, Resolution, AspectRatio } from "../types";
 
-// Initialize the API client
-// Note: process.env.API_KEY is guaranteed to be available in this environment
-// We will create a fresh instance if we need to use a user-selected key for Pro models
-let ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-/**
- * Edits an image using the Gemini Nano Banana model (gemini-2.5-flash-image)
- * or Gemini 3 Pro for higher resolutions.
- */
-export const editImageWithGemini = async (
-  base64Data: string,
-  mimeType: string,
+export const processImageWithGemini = async (
   prompt: string,
-  resolution: Resolution = '1K',
-  maskBase64?: string
+  options: {
+    base64Data?: string;
+    mimeType?: string;
+    resolution?: Resolution;
+    aspectRatio?: AspectRatio;
+    maskBase64?: string;
+  }
 ): Promise<EditResult> => {
+  const { base64Data, mimeType, resolution = '1K', aspectRatio = '1:1', maskBase64 } = options;
+  
   try {
     let model = 'gemini-2.5-flash-image';
-    let imageConfig: any = undefined;
+    let imageConfig: any = {
+      aspectRatio: aspectRatio
+    };
     
     // Switch to Gemini 3 Pro for High Resolution
     if (resolution === '2K' || resolution === '4K') {
       model = 'gemini-3-pro-image-preview';
-      imageConfig = {
-        imageSize: resolution
-      };
+      imageConfig.imageSize = resolution;
 
-      // Handle API Key Selection for Pro models
       const win = window as any;
       if (win.aistudio) {
         const hasKey = await win.aistudio.hasSelectedApiKey();
         if (!hasKey) {
            await win.aistudio.openSelectKey();
-           // Re-check after dialog
            const hasKeyNow = await win.aistudio.hasSelectedApiKey();
            if (!hasKeyNow) {
-             throw new Error("API Key selection is required for High Resolution editing.");
+             throw new Error("API Key selection is required for High Resolution.");
            }
         }
-        // Re-initialize AI with the (potentially new) key environment
-        ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       }
     }
 
-    // Enhance prompt when masking to ensure the model edits rather than generates new
-    // This helps prevent the model from ignoring the input image or hallucinating unrelated content
-    const effectivePrompt = maskBase64 
-      ? `Apply this change to the masked area: ${prompt}`
-      : prompt;
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-    const parts: any[] = [
-      {
+    const parts: any[] = [];
+    
+    // Add source image if provided (Editing mode)
+    if (base64Data && mimeType) {
+      parts.push({
         inlineData: {
           data: base64Data,
           mimeType: mimeType,
         },
-      },
-      {
-        text: effectivePrompt,
-      },
-    ];
+      });
+    }
 
-    // If a mask is provided, add it as another image part
+    // Add mask if provided
     if (maskBase64) {
-      parts.splice(1, 0, {
+      parts.push({
         inlineData: {
           data: maskBase64,
-          mimeType: 'image/png', // Masks are generated as PNGs
+          mimeType: 'image/png',
         },
       });
     }
 
+    // Add prompt
+    const effectivePrompt = maskBase64 
+      ? `Apply this change to the masked area: ${prompt}`
+      : prompt;
+      
+    parts.push({ text: effectivePrompt });
+
     const response = await ai.models.generateContent({
       model: model, 
-      contents: {
-        parts: parts,
-      },
-      config: {
-        imageConfig: imageConfig
-      }
+      contents: { parts },
+      config: { imageConfig }
     });
 
     let result: EditResult = {};
@@ -90,10 +82,8 @@ export const editImageWithGemini = async (
       if (content && content.parts) {
         for (const part of content.parts) {
           if (part.inlineData && part.inlineData.data) {
-            // Found the generated image
             result.imageUrl = `data:image/png;base64,${part.inlineData.data}`;
           } else if (part.text) {
-            // Found text output (could be a refusal or explanation)
             result.text = part.text;
           }
         }
@@ -107,7 +97,16 @@ export const editImageWithGemini = async (
     return result;
 
   } catch (error) {
-    console.error("Error editing image:", error);
+    console.error("Error processing with Gemini:", error);
     throw error;
   }
 };
+
+// Deprecated in favor of processImageWithGemini but kept for compatibility if needed
+export const editImageWithGemini = (
+  base64Data: string,
+  mimeType: string,
+  prompt: string,
+  resolution: Resolution = '1K',
+  maskBase64?: string
+) => processImageWithGemini(prompt, { base64Data, mimeType, resolution, maskBase64 });
